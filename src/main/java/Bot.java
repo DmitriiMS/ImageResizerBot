@@ -1,6 +1,4 @@
-import org.imgscalr.Scalr;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
+import lombok.extern.slf4j.Slf4j;
 import org.telegram.telegrambots.bots.TelegramLongPollingBot;
 import org.telegram.telegrambots.meta.api.methods.GetFile;
 import org.telegram.telegrambots.meta.api.methods.send.SendDocument;
@@ -8,32 +6,38 @@ import org.telegram.telegrambots.meta.api.methods.send.SendMessage;
 import org.telegram.telegrambots.meta.api.objects.*;
 import org.telegram.telegrambots.meta.exceptions.TelegramApiException;
 
-import java.awt.image.BufferedImage;
 import java.io.File;
 
 import java.io.IOException;
-import java.io.InputStream;
-import java.net.URL;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
-import java.util.Objects;
+import java.util.HashMap;
+import java.util.List;
+import java.util.Map;
+import java.util.concurrent.ExecutionException;
+import java.util.concurrent.ForkJoinPool;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 
-
-import javax.imageio.ImageIO;
-
+@Slf4j
 public class Bot extends TelegramLongPollingBot {
 
+    private final ForkJoinPool pool = new ForkJoinPool();
+
+    private final Map<String, ImageResizerRecursiveTask> chatsWithWorkingTasks = new HashMap<>();
+
+    private final Pattern batchPattern = Pattern.compile("/batch ((\\d+( \\d+)?)|(\\d+)%)$");
+
     private static String instructions;
+
     static {
         try {
             instructions = new String(Bot.class.getClassLoader().getResourceAsStream("data/instructions").readAllBytes(), StandardCharsets.UTF_8);
         } catch (IOException e) {
-            e.printStackTrace();
+            log.error(e.getMessage(), e);
         }
     }
-
-    private final Logger logger = LoggerFactory.getLogger(Bot.class);
 
     @Override
     public String getBotUsername() {
@@ -49,22 +53,35 @@ public class Bot extends TelegramLongPollingBot {
     public void onUpdateReceived(Update update) {
 
         if (!update.hasMessage()) {
-            logger.warn("no message received");
+            log.warn("no message received");
             return;
         }
 
         Message message = update.getMessage();
+        String chatId = String.valueOf(message.getChatId());
 
         try {
             if (message.hasText()) {
-                switch (message.getText()) {
+                String command = message.getText();
+                switch (command) {
                     case "/start":
                     case "/help":
-                        reply(message, instructions);
+                        reply(chatId, instructions);
+                        break;
+                    case "/processBatch":
+                        sendBackImages(chatId);
+                        log.debug("done with chat " + chatId);
                         break;
                     default:
-                        logger.warn("unknown command: " + message.toString());
-                        reply(message, "Я не знаю, что с этим делать. Для подсказки пришли команду /help");
+                        Matcher matcher = batchPattern.matcher(command);
+                        if (matcher.matches()) {
+                            String[] scalingOptions = matcher.group(1).split(" ");
+                            addTask(chatId, scalingOptions);
+                            log.debug("created batch task for chat " + chatId);
+                            break;
+                        }
+                        log.warn("unknown command: " + message.toString());
+                        reply(chatId, "Я не знаю, что с этим делать. Для подсказки пришли команду /help");
                         break;
                 }
                 return;
@@ -73,41 +90,51 @@ public class Bot extends TelegramLongPollingBot {
             if (message.hasDocument()) {
                 Document sourceImage = message.getDocument();
                 if (!sourceImage.getMimeType().contains("image")) {
-                    logger.warn("unsupported mime type: " + sourceImage.getMimeType());
-                    reply(message, "Я не умею работать с " + sourceImage.getMimeType());
+                    log.warn("unsupported mime type: " + sourceImage.getMimeType());
+                    reply(chatId, "Я не умею работать с " + sourceImage.getMimeType());
                     return;
                 }
 
                 String caption = message.getCaption();
-                if (caption == null) {
-                    reply(message, "Необходимо указать параметры обработки, для помощи используй /help");
+                if (!chatsWithWorkingTasks.containsKey(chatId) && caption == null) {
+                    reply(chatId, "Необходимо указать параметры обработки, для помощи используй /help");
                     return;
                 }
 
-                String[] scalingOptions = caption.split(" ");
                 File original = downloadDocument(sourceImage);
-                File resized = resizeImage(scalingOptions, original, sourceImage.getFileName(), sourceImage.getMimeType().split("/")[1]);
+                log.debug("received document for processing from chat " + chatId);
 
-                execute(SendDocument.builder()
-                        .chatId(String.valueOf(update.getMessage().getChatId()))
-                        .document(new InputFile(resized))
-                        .caption("готово!")
-                        .build()
-                );
-
-                resized.delete();
+                if(!chatsWithWorkingTasks.containsKey(chatId)) {
+                    String[] scalingOptions = caption.split(" ");
+                    addTask(chatId, scalingOptions);
+                    addImageToTask(chatId, original, sourceImage.getFileName(), sourceImage.getMimeType().split("/")[1]);
+                    log.debug("task created for chat " + chatId);
+                    sendBackImages(chatId);
+                    log.debug("done with chat " + chatId);
+                } else {
+                    addImageToTask(chatId, original, sourceImage.getFileName(), sourceImage.getMimeType().split("/")[1]);
+                    log.debug("image added for chat " + chatId);
+                }
                 return;
             }
 
-            reply(update.getMessage(), "Это я не умею. /help");
+            reply(chatId, "Это я не умею. /help");
 
         } catch (TelegramApiException | IOException e) {
-            logger.error(e.getMessage(), e);
-            reply(message, "Я немного сломался, попробуй что-нибудь ещё сделать.");
+            log.error(e.getMessage(), e);
+            reply(chatId, "Я немного сломался, попробуй что-нибудь ещё сделать.");
         } catch (IllegalArgumentException e) {
-            reply(message, "Ошибка в параметрах для масштабирования /help");
+            reply(chatId, "Ошибка в параметрах для масштабирования /help");
+        } catch (ExecutionException | InterruptedException e) {
+            log.error(e.getMessage(), e);
         }
 
+    }
+
+    private void addImageToTask(String chatId, File original, String filename, String mimeType) throws IOException {
+        ImageResizerRecursiveTask task = chatsWithWorkingTasks.get(chatId);
+        ImageToResize imageToResize = new ImageToResize(task.getScalingOptions(), original, filename, mimeType);
+        task.addImage(imageToResize);
     }
 
     private File downloadDocument(Document doc) throws TelegramApiException {
@@ -116,41 +143,41 @@ public class Bot extends TelegramLongPollingBot {
         return downloadFile(path);
     }
 
-    private File resizeImage(String[] scalingOptions, File input, String fileName, String format) throws TelegramApiException, IllegalArgumentException, IOException {
-        BufferedImage inputImage = ImageIO.read(input);
-        int newWidth, newHeight;
-
-        if (scalingOptions.length == 2) {
-            newWidth = Integer.parseInt(scalingOptions[0]);
-            newHeight = Integer.parseInt(scalingOptions[1]);
-        } else if (scalingOptions.length == 1) {
-            if (scalingOptions[0].contains("%")) {
-                int scale = Integer.parseInt(scalingOptions[0].replaceAll("\\D", ""));
-                newWidth = (int) (inputImage.getWidth() * (scale / 100.));
-                newHeight = (int) (inputImage.getHeight() * (scale / 100.));
-            } else {
-                newWidth = Integer.parseInt(scalingOptions[0].replaceAll("\\D", ""));
-                newHeight = (int) (((double) newWidth / inputImage.getWidth()) * (double) inputImage.getHeight());
-            }
-        } else {
-            throw new IllegalArgumentException("слишком много параметров");
+    private void sendBackImages(String chatId) throws TelegramApiException, IOException, ExecutionException, InterruptedException {
+        ImageResizerRecursiveTask task = chatsWithWorkingTasks.get(chatId);
+        log.debug("task launching for chat " + chatId);
+        pool.execute(task);
+        log.debug("ready to get results for chat " + chatId);
+        List<File> imagesToSend = task.get();
+        log.debug("preparing to send images back to chat " + chatId);
+        for (File f : imagesToSend) {
+            execute(SendDocument.builder()
+                    .caption("Готово")
+                    .chatId(chatId)
+                    .document(new InputFile(f))
+                    .build());
         }
-
-        BufferedImage resizedImage = Scalr.resize(inputImage, Scalr.Method.ULTRA_QUALITY, Scalr.Mode.FIT_EXACT, newWidth, newHeight, Scalr.OP_ANTIALIAS);
-        File result = new File("resized_" + fileName);
-        ImageIO.write(resizedImage, format, result);
-        return result;
+        imagesToSend.forEach(File::delete);
+        Files.deleteIfExists(Path.of(chatId));
+        chatsWithWorkingTasks.remove(chatId);
     }
 
-    private void reply(Message m, String text) {
+    private void reply(String chatId, String text) {
         try {
             execute(SendMessage.builder()
-                    .chatId(String.valueOf(m.getChatId()))
+                    .chatId(chatId)
                     .text(text)
                     .build());
         } catch (TelegramApiException e) {
-            logger.error(e.getMessage(), e);
+            log.error(e.getMessage(), e);
         }
 
+    }
+
+    private void addTask(String chatId, String[] scalingOptions) throws IllegalArgumentException, IOException {
+        if (chatsWithWorkingTasks.containsKey(chatId)) {
+            throw new IllegalArgumentException("Задача для чата " + chatId + " уже создана");
+        }
+        chatsWithWorkingTasks.put(chatId, new ImageResizerRecursiveTask(scalingOptions, chatId));
     }
 }
