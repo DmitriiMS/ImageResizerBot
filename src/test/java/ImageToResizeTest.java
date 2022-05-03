@@ -19,7 +19,7 @@ public class ImageToResizeTest {
         Assertions.assertAll("Should correctly halve width and height, and have correct name and format",
                 () -> assertEquals(50, imageToResize.getNewWidth()),
                 () -> assertEquals(50, imageToResize.getNewHeight()),
-                () -> assertEquals("input", imageToResize.getFileName()),
+                () -> assertEquals("input.png", imageToResize.getFileName()),
                 () -> assertEquals("png", imageToResize.getFormat()));
     }
 
@@ -30,7 +30,7 @@ public class ImageToResizeTest {
         Assertions.assertAll("Should correctly calculate width and height, and have correct name and format",
                 () -> assertEquals(20, imageToResize.getNewWidth()),
                 () -> assertEquals(20, imageToResize.getNewHeight()),
-                () -> assertEquals("input", imageToResize.getFileName()),
+                () -> assertEquals("input.png", imageToResize.getFileName()),
                 () -> assertEquals("png", imageToResize.getFormat()));
     }
 
@@ -41,7 +41,7 @@ public class ImageToResizeTest {
         Assertions.assertAll("Should correctly set width and height, and have correct name and format",
                 () -> assertEquals(10, imageToResize.getNewWidth()),
                 () -> assertEquals(15, imageToResize.getNewHeight()),
-                () -> assertEquals("input", imageToResize.getFileName()),
+                () -> assertEquals("input.png", imageToResize.getFileName()),
                 () -> assertEquals("png", imageToResize.getFormat()));
     }
 
