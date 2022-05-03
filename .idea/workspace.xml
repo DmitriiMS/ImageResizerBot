@@ -5,16 +5,14 @@
   </component>
   <component name="ChangeListManager">
     <list default="true" id="1b48f174-efb2-4814-afa5-217ac2e695d6" name="Changes" comment="">
-      <change afterPath="$PROJECT_DIR$/.idea/inspectionProfiles/Project_Default.xml" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/.idea/vcs.xml" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/src/main/java/ImageResizerRecursiveTask.java" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/src/main/java/ImageToResize.java" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/.idea/compiler.xml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/compiler.xml" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/src/test/java/ImageResizerRecursiveTaskTest.java" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/src/test/java/ImageToResizeTest.java" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/src/test/resources/image/etalon.png" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/src/test/resources/image/input.png" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/.idea/workspace.xml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/workspace.xml" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/pom.xml" beforeDir="false" afterPath="$PROJECT_DIR$/pom.xml" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/src/main/java/Bot.java" beforeDir="false" afterPath="$PROJECT_DIR$/src/main/java/Bot.java" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/src/main/resources/data/instructions" beforeDir="false" afterPath="$PROJECT_DIR$/src/main/resources/data/instructions" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/src/main/resources/simplelogger.properties" beforeDir="false" afterPath="$PROJECT_DIR$/src/main/resources/simplelogger.properties" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/main/java/ImageResizerRecursiveTask.java" beforeDir="false" afterPath="$PROJECT_DIR$/src/main/java/ImageResizerRecursiveTask.java" afterDir="false" />
     </list>
     <option name="SHOW_DIALOG" value="false" />
     <option name="HIGHLIGHT_CONFLICTS" value="true" />
@@ -49,14 +47,24 @@
     <option name="hideEmptyMiddlePackages" value="true" />
     <option name="showLibraryContents" value="true" />
   </component>
-  <component name="PropertiesComponent">{
-  &quot;keyToString&quot;: {
-    &quot;RunOnceActivity.OpenProjectViewOnStart&quot;: &quot;true&quot;,
-    &quot;RunOnceActivity.ShowReadmeOnStart&quot;: &quot;true&quot;,
-    &quot;SHARE_PROJECT_CONFIGURATION_FILES&quot;: &quot;true&quot;
+  <component name="PropertiesComponent"><![CDATA[{
+  "keyToString": {
+    "RunOnceActivity.OpenProjectViewOnStart": "true",
+    "RunOnceActivity.ShowReadmeOnStart": "true",
+    "SHARE_PROJECT_CONFIGURATION_FILES": "true",
+    "last_opened_file_path": "/home/dms/IdeaProjects/ImageResizerBot/src/test/resources/image",
+    "project.structure.last.edited": "SDKs",
+    "project.structure.proportion": "0.15",
+    "project.structure.side.proportion": "0.2",
+    "settings.editor.selected.configurable": "preferences.customizations"
   }
-}</component>
-  <component name="RunManager">
+}]]></component>
+  <component name="RecentsManager">
+    <key name="CopyFile.RECENT_KEYS">
+      <recent name="$PROJECT_DIR$/src/test/resources/image" />
+    </key>
+  </component>
+  <component name="RunManager" selected="JUnit.ImageResizerRecursiveTaskTest.testResizeImage">
     <configuration name="Main" type="Application" factoryName="Application" temporary="true" nameIsGenerated="true">
       <option name="MAIN_CLASS_NAME" value="Main" />
       <module name="image-resizer-bot" />
@@ -64,9 +72,52 @@
         <option name="Make" enabled="true" />
       </method>
     </configuration>
+    <configuration name="ImageResizerRecursiveTaskTest.testResizeImage" type="JUnit" factoryName="JUnit" temporary="true" nameIsGenerated="true">
+      <module name="image-resizer-bot" />
+      <option name="PACKAGE_NAME" value="" />
+      <option name="MAIN_CLASS_NAME" value="ImageResizerRecursiveTaskTest" />
+      <option name="METHOD_NAME" value="testResizeImage" />
+      <option name="TEST_OBJECT" value="method" />
+      <method v="2">
+        <option name="Make" enabled="true" />
+      </method>
+    </configuration>
+    <configuration name="ImageToResizeTest" type="JUnit" factoryName="JUnit" temporary="true" nameIsGenerated="true">
+      <module name="image-resizer-bot" />
+      <option name="PACKAGE_NAME" value="" />
+      <option name="MAIN_CLASS_NAME" value="ImageToResizeTest" />
+      <option name="TEST_OBJECT" value="class" />
+      <method v="2">
+        <option name="Make" enabled="true" />
+      </method>
+    </configuration>
+    <configuration name="ImageToResizeTest.testTrowExceptionOnTooManyParameters" type="JUnit" factoryName="JUnit" temporary="true" nameIsGenerated="true">
+      <module name="image-resizer-bot" />
+      <option name="PACKAGE_NAME" value="" />
+      <option name="MAIN_CLASS_NAME" value="ImageToResizeTest" />
+      <option name="METHOD_NAME" value="testTrowExceptionOnTooManyParameters" />
+      <option name="TEST_OBJECT" value="method" />
+      <method v="2">
+        <option name="Make" enabled="true" />
+      </method>
+    </configuration>
+    <configuration name="ImageToResizeTest.testWidthHeightParameter" type="JUnit" factoryName="JUnit" temporary="true" nameIsGenerated="true">
+      <module name="image-resizer-bot" />
+      <option name="PACKAGE_NAME" value="" />
+      <option name="MAIN_CLASS_NAME" value="ImageToResizeTest" />
+      <option name="METHOD_NAME" value="testWidthHeightParameter" />
+      <option name="TEST_OBJECT" value="method" />
+      <method v="2">
+        <option name="Make" enabled="true" />
+      </method>
+    </configuration>
     <recent_temporary>
       <list>
+        <item itemvalue="JUnit.ImageResizerRecursiveTaskTest.testResizeImage" />
         <item itemvalue="Application.Main" />
+        <item itemvalue="JUnit.ImageToResizeTest" />
+        <item itemvalue="JUnit.ImageToResizeTest.testWidthHeightParameter" />
+        <item itemvalue="JUnit.ImageToResizeTest.testTrowExceptionOnTooManyParameters" />
       </list>
     </recent_temporary>
   </component>

@@ -20,7 +20,7 @@ import java.util.stream.Collectors;
 public class ImageResizerRecursiveTask extends RecursiveTask<List<File>> {
 
     private static final int THRESHOLD = 2;
-    private List<ImageToResize> imagesToProcess;
+    private final List<ImageToResize> imagesToProcess;
 
     @Getter
     @Setter
