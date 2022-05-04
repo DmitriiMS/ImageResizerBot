@@ -84,9 +84,14 @@ public class ImageResizerRecursiveTask extends RecursiveTask<List<File>> {
 
     private Collection<ImageResizerRecursiveTask> createSubTasks() {
         int length = imagesToProcess.size();
-        return new ArrayList<>() {{
-            add(new ImageResizerRecursiveTask(imagesToProcess.subList(0, length / 2), scalingOptions, chatId));
-            add(new ImageResizerRecursiveTask(imagesToProcess.subList(length / 2, length), scalingOptions, chatId));
-        }};
+        List<ImageResizerRecursiveTask> splitTasks = new ArrayList<>();
+        for(int i = 0;;i++) {
+            if(i + THRESHOLD >= length) {
+                splitTasks.add(new ImageResizerRecursiveTask(imagesToProcess.subList(i, length), scalingOptions, chatId));
+                break;
+            }
+            splitTasks.add(new ImageResizerRecursiveTask(imagesToProcess.subList(i, i + THRESHOLD), scalingOptions, chatId));
+        }
+        return splitTasks;
     }
 }

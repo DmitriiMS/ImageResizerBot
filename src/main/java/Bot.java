@@ -120,13 +120,11 @@ public class Bot extends TelegramLongPollingBot {
 
             reply(chatId, "Это я не умею. /help");
 
-        } catch (TelegramApiException | IOException e) {
+        } catch (TelegramApiException | IOException | ExecutionException | InterruptedException e) {
             log.error(e.getMessage(), e);
             reply(chatId, "Я немного сломался, попробуй что-нибудь ещё сделать.");
         } catch (IllegalArgumentException e) {
             reply(chatId, "Ошибка в параметрах для масштабирования /help");
-        } catch (ExecutionException | InterruptedException e) {
-            log.error(e.getMessage(), e);
         }
 
     }
