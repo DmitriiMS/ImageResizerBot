@@ -66,6 +66,7 @@ public class ImageResizerRecursiveTask extends RecursiveTask<List<File>> {
     }
 
     private File resizeImage(ImageToResize source){
+
         log.debug("starting to resize " + source.getFileName());
         BufferedImage resizedImage = Scalr.resize(source.getOriginal(), Scalr.Method.ULTRA_QUALITY, Scalr.Mode.FIT_EXACT,
                 source.getNewWidth(), source.getNewHeight(), Scalr.OP_ANTIALIAS);
@@ -85,7 +86,7 @@ public class ImageResizerRecursiveTask extends RecursiveTask<List<File>> {
     private Collection<ImageResizerRecursiveTask> createSubTasks() {
         int length = imagesToProcess.size();
         List<ImageResizerRecursiveTask> splitTasks = new ArrayList<>();
-        for(int i = 0;;i++) {
+        for(int i = 0;;i += THRESHOLD) {
             if(i + THRESHOLD >= length) {
                 splitTasks.add(new ImageResizerRecursiveTask(imagesToProcess.subList(i, length), scalingOptions, chatId));
                 break;

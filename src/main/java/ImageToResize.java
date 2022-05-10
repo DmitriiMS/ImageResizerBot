@@ -32,8 +32,6 @@ public class ImageToResize {
                 newWidth = Integer.parseInt(scalingOptions[0].replaceAll("\\D", ""));
                 newHeight = (int) (((double) newWidth / original.getWidth()) * (double) original.getHeight());
             }
-        } else {
-            throw new IllegalArgumentException("слишком много параметров");
         }
         log.debug("new image to resize " + fileName + " " + format + " " + newWidth + " " + newHeight);
     }

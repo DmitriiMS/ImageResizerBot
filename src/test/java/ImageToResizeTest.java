@@ -44,11 +44,4 @@ public class ImageToResizeTest {
                 () -> assertEquals("input.png", imageToResize.getFileName()),
                 () -> assertEquals("png", imageToResize.getFormat()));
     }
-
-    @Test
-    @DisplayName("Test if exception is thrown when there's more than 2 scaling options")
-    public void testTrowExceptionOnTooManyParameters() throws IOException {
-        Assertions.assertThrows(IllegalArgumentException.class,
-                () -> new ImageToResize(new String[]{"11", "11", "85%"}, input, "input.png", "png"));
-    }
 }

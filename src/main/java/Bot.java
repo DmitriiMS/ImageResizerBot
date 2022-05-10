@@ -23,11 +23,14 @@ import java.util.regex.Pattern;
 @Slf4j
 public class Bot extends TelegramLongPollingBot {
 
+    private final String botUsername;
+    private final String botToken;
+
     private final ForkJoinPool pool = new ForkJoinPool();
 
     private final Map<String, ImageResizerRecursiveTask> chatsWithWorkingTasks = new HashMap<>();
 
-    private final Pattern batchPattern = Pattern.compile("/batch ((\\d+( \\d+)?)|(\\d+)%)$");
+    private final Pattern scalingPattern = Pattern.compile("((\\d+( \\d+)?)|(\\d+)%)$");
 
     private static String instructions;
 
@@ -39,14 +42,19 @@ public class Bot extends TelegramLongPollingBot {
         }
     }
 
+    public Bot(String botUsername, String botToken) {
+        this.botUsername = botUsername;
+        this.botToken = botToken;
+    }
+
     @Override
     public String getBotUsername() {
-        return "";
+        return botUsername;
     }
 
     @Override
     public String getBotToken() {
-        return "";
+        return botToken;
     }
 
     @Override
@@ -69,16 +77,20 @@ public class Bot extends TelegramLongPollingBot {
                         reply(chatId, instructions);
                         break;
                     case "/processBatch":
+                        reply(chatId, "Запустил обработку. Подожди немного.");
                         sendBackImages(chatId);
                         log.debug("done with chat " + chatId);
                         break;
                     default:
-                        Matcher matcher = batchPattern.matcher(command);
-                        if (matcher.matches()) {
-                            String[] scalingOptions = matcher.group(1).split(" ");
-                            addTask(chatId, scalingOptions);
-                            log.debug("created batch task for chat " + chatId);
-                            break;
+                        if(command.startsWith("/batch ")){
+                            command = command.replace("/batch ", "").trim();
+                            Matcher matcher = scalingPattern.matcher(command);
+                            if (matcher.matches()) {
+                                String[] scalingOptions = matcher.group(1).split(" ");
+                                addTask(chatId, scalingOptions);
+                                log.debug("created batch task for chat " + chatId);
+                                break;
+                            }
                         }
                         log.warn("unknown command: " + message.toString());
                         reply(chatId, "Я не знаю, что с этим делать. Для подсказки пришли команду /help");
@@ -105,6 +117,10 @@ public class Bot extends TelegramLongPollingBot {
                 log.debug("received document for processing from chat " + chatId);
 
                 if(!chatsWithWorkingTasks.containsKey(chatId)) {
+                    Matcher matcher = scalingPattern.matcher(caption);
+                    if(!matcher.matches()){
+                        throw new IllegalArgumentException("слишком много параметров");
+                    }
                     String[] scalingOptions = caption.split(" ");
                     addTask(chatId, scalingOptions);
                     addImageToTask(chatId, original, sourceImage.getFileName(), sourceImage.getMimeType().split("/")[1]);
