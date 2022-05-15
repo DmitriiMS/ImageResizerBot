@@ -1,4 +1,7 @@
+import lombok.Getter;
+import lombok.Setter;
 import lombok.extern.slf4j.Slf4j;
+import org.imgscalr.Scalr;
 import org.telegram.telegrambots.bots.TelegramLongPollingBot;
 import org.telegram.telegrambots.meta.api.methods.GetFile;
 import org.telegram.telegrambots.meta.api.methods.send.SendDocument;
@@ -6,19 +9,23 @@ import org.telegram.telegrambots.meta.api.methods.send.SendMessage;
 import org.telegram.telegrambots.meta.api.objects.*;
 import org.telegram.telegrambots.meta.exceptions.TelegramApiException;
 
-import java.io.File;
+import javax.imageio.ImageIO;
+import java.awt.image.BufferedImage;
+import java.io.*;
 
-import java.io.IOException;
+import java.io.File;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
-import java.util.HashMap;
-import java.util.List;
-import java.util.Map;
+import java.util.*;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.ForkJoinPool;
+import java.util.concurrent.ForkJoinTask;
+import java.util.concurrent.RecursiveTask;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
+import java.util.stream.Collectors;
+import java.util.stream.Stream;
 
 @Slf4j
 public class Bot extends TelegramLongPollingBot {
@@ -82,7 +89,7 @@ public class Bot extends TelegramLongPollingBot {
                         log.debug("done with chat " + chatId);
                         break;
                     default:
-                        if(command.startsWith("/batch ")){
+                        if (command.startsWith("/batch ")) {
                             command = command.replace("/batch ", "").trim();
                             Matcher matcher = scalingPattern.matcher(command);
                             if (matcher.matches()) {
@@ -113,22 +120,21 @@ public class Bot extends TelegramLongPollingBot {
                     return;
                 }
 
-                File original = downloadDocument(sourceImage);
                 log.debug("received document for processing from chat " + chatId);
 
-                if(!chatsWithWorkingTasks.containsKey(chatId)) {
+                if (!chatsWithWorkingTasks.containsKey(chatId)) {
                     Matcher matcher = scalingPattern.matcher(caption);
-                    if(!matcher.matches()){
+                    if (!matcher.matches()) {
                         throw new IllegalArgumentException("слишком много параметров");
                     }
                     String[] scalingOptions = caption.split(" ");
                     addTask(chatId, scalingOptions);
-                    addImageToTask(chatId, original, sourceImage.getFileName(), sourceImage.getMimeType().split("/")[1]);
+                    addImageToTask(chatId, sourceImage);
                     log.debug("task created for chat " + chatId);
                     sendBackImages(chatId);
                     log.debug("done with chat " + chatId);
                 } else {
-                    addImageToTask(chatId, original, sourceImage.getFileName(), sourceImage.getMimeType().split("/")[1]);
+                    addImageToTask(chatId, sourceImage);
                     log.debug("image added for chat " + chatId);
                 }
                 return;
@@ -145,10 +151,10 @@ public class Bot extends TelegramLongPollingBot {
 
     }
 
-    private void addImageToTask(String chatId, File original, String filename, String mimeType) throws IOException {
+    private void addImageToTask(String chatId, Document sourceImage) throws IOException {
         ImageResizerRecursiveTask task = chatsWithWorkingTasks.get(chatId);
-        ImageToResize imageToResize = new ImageToResize(task.getScalingOptions(), original, filename, mimeType);
-        task.addImage(imageToResize);
+        DocumentToProcess documentToAdd = new DocumentToProcess(sourceImage, chatId);
+        task.addImage(documentToAdd);
     }
 
     private File downloadDocument(Document doc) throws TelegramApiException {
@@ -162,18 +168,18 @@ public class Bot extends TelegramLongPollingBot {
         log.debug("task launching for chat " + chatId);
         pool.execute(task);
         log.debug("ready to get results for chat " + chatId);
-        List<File> imagesToSend = task.get();
+        //List<File> imagesToSend = task.get();
         log.debug("preparing to send images back to chat " + chatId);
-        for (File f : imagesToSend) {
-            execute(SendDocument.builder()
-                    .caption("Готово")
-                    .chatId(chatId)
-                    .document(new InputFile(f))
-                    .build());
-        }
-        imagesToSend.forEach(File::delete);
-        Files.deleteIfExists(Path.of(chatId));
-        chatsWithWorkingTasks.remove(chatId);
+//        for (File f : imagesToSend) {
+//            execute(SendDocument.builder()
+//                    .caption("Готово")
+//                    .chatId(chatId)
+//                    .document(new InputFile(f))
+//                    .build());
+//        }
+//        imagesToSend.forEach(File::delete);
+//        Files.deleteIfExists(Path.of(chatId));
+//        chatsWithWorkingTasks.remove(chatId);
     }
 
     private void reply(String chatId, String text) {
@@ -193,5 +199,128 @@ public class Bot extends TelegramLongPollingBot {
             throw new IllegalArgumentException("Задача для чата " + chatId + " уже создана");
         }
         chatsWithWorkingTasks.put(chatId, new ImageResizerRecursiveTask(scalingOptions, chatId));
+    }
+
+    public class ImageResizerRecursiveTask extends RecursiveTask<List<File>> {
+
+        private static final int THRESHOLD = 1;
+        private final List<DocumentToProcess> documentsToProcess;
+
+        @Getter
+        @Setter
+        private String[] scalingOptions;
+        @Getter
+        @Setter
+        private String chatId;
+
+
+
+        public ImageResizerRecursiveTask(List<DocumentToProcess> documentsToProcess, String[] scalingOptions, String chatId) {
+            this.documentsToProcess = Collections.synchronizedList(documentsToProcess);
+            this.scalingOptions = scalingOptions;
+            this.chatId = chatId;
+        }
+
+        public ImageResizerRecursiveTask(String[] scalingOptions, String chatId) throws IOException {
+            this(Collections.synchronizedList(new ArrayList<>()), scalingOptions, chatId);
+//            Path chatDir = Path.of(chatId);
+//            if (!Files.exists(chatDir)) {
+//                Files.createDirectory(chatDir);
+//            }
+        }
+
+        public void addImage(DocumentToProcess document) {
+            documentsToProcess.add(document);
+        }
+
+
+        @Override
+        protected List<File> compute() {
+            log.debug("entering fork");
+            if (documentsToProcess.size() > THRESHOLD) {
+                log.debug("over threshold -- splitting");
+                return invokeAll(createSubTasks()).stream()
+                        .map(ForkJoinTask::join)
+                        .flatMap(List::stream)
+                        .collect(Collectors.toList());
+            } else {
+                log.debug("running task");
+                return documentsToProcess.stream()
+                        .map(this::resizeImage)
+                        .collect(Collectors.toList());
+            }
+        }
+
+        private File resizeImage(DocumentToProcess source) {
+            OutputStream result = null;
+            String fileName = null;
+            try {
+                Document doc = source.getOriginal();
+                fileName = doc.getFileName();
+                log.debug("downloading " + fileName);
+                String format = doc.getMimeType().split("/")[1];
+                int newWidth = 0, newHeight = 0;
+
+                BufferedImage beforeResize = ImageIO.read(downloadDocument(doc));
+
+                if (scalingOptions.length == 2) {
+                    newWidth = Integer.parseInt(scalingOptions[0]);
+                    newHeight = Integer.parseInt(scalingOptions[1]);
+                } else if (scalingOptions.length == 1) {
+                    if (scalingOptions[0].contains("%")) {
+                        int scale = Integer.parseInt(scalingOptions[0].replaceAll("\\D", ""));
+                        newWidth = (int) (beforeResize.getWidth() * (scale / 100.));
+                        newHeight = (int) (beforeResize.getHeight() * (scale / 100.));
+                    } else {
+                        newWidth = Integer.parseInt(scalingOptions[0].replaceAll("\\D", ""));
+                        newHeight = (int) (((double) newWidth / beforeResize.getWidth()) * (double) beforeResize.getHeight());
+                    }
+                }
+
+                log.debug("starting to resize " + fileName);
+                BufferedImage resizedImage = Scalr.resize(beforeResize, Scalr.Method.ULTRA_QUALITY, Scalr.Mode.FIT_EXACT,
+                        newWidth, newHeight, Scalr.OP_ANTIALIAS);
+                String newFileName = fileName.split("\\.")[0] + "_" +
+                        newWidth + "x" + newHeight + "." +
+                        fileName.split("\\.")[1];
+
+                ByteArrayOutputStream outputStream = new ByteArrayOutputStream();
+                ImageIO.write(resizedImage, format, outputStream);
+                InputStream inputStream = new ByteArrayInputStream(outputStream.toByteArray());
+
+                log.debug("sending " + fileName + " to chat " + chatId);
+                execute(SendDocument.builder()
+                        .chatId(source.getChatId())
+                        .caption("Готово!")
+                        .document(new InputFile(inputStream, newFileName))
+                        .build());
+                System.out.println("sent " + newFileName);
+                documentsToProcess.remove(source);
+                log.debug("resized " + fileName + ", leaving");
+                if(documentsToProcess.size() == 0) {
+                    chatsWithWorkingTasks.remove(chatId);
+                    log.debug("resized " + fileName + ", leaving");
+                    System.out.println("done with " + newFileName);
+                }
+                System.out.println("done with " + newFileName);
+            } catch (IOException | TelegramApiException e) {
+                log.error(e.getMessage(), e);
+            }
+
+            return null;
+        }
+
+        private Collection<ImageResizerRecursiveTask> createSubTasks() {
+            int length = documentsToProcess.size();
+            List<ImageResizerRecursiveTask> splitTasks = new ArrayList<>();
+            for (int i = 0; ; i += THRESHOLD) {
+                if (i + THRESHOLD >= length) {
+                    splitTasks.add(new ImageResizerRecursiveTask(documentsToProcess.subList(i, length), scalingOptions, chatId));
+                    break;
+                }
+                splitTasks.add(new ImageResizerRecursiveTask(documentsToProcess.subList(i, i + THRESHOLD), scalingOptions, chatId));
+            }
+            return splitTasks;
+        }
     }
 }
