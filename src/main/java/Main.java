@@ -11,10 +11,10 @@ public class Main {
 
     public static void main(String[] args) {
         try{
-            Properties botPtops = new Properties();
-            botPtops.load(new FileInputStream("bot.properties"));
+            Properties botProps = new Properties();
+            botProps.load(new FileInputStream("bot.properties"));
             TelegramBotsApi botsApi = new TelegramBotsApi(DefaultBotSession.class);
-            botsApi.registerBot(new Bot(botPtops.getProperty("botUsername"), botPtops.getProperty("botToken")));
+            botsApi.registerBot(new Bot(botProps.getProperty("botUsername"), botProps.getProperty("botToken")));
         } catch (TelegramApiException | FileNotFoundException e) {
             e.printStackTrace();
         } catch (IOException e) {
