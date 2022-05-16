@@ -21,7 +21,7 @@ import java.util.concurrent.atomic.AtomicInteger;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
-//TODO: move code to methods, look into moving methods to utils class, cleanup and optimization
+//TODO: scaling optimization (memory usage, speed secondary), new tests, cleanup and refactoring
 @Slf4j
 public class Bot extends TelegramLongPollingBot {
 
@@ -80,9 +80,7 @@ public class Bot extends TelegramLongPollingBot {
                         break;
                     case "/processBatch":
                         reply(chatId, "Запустил обработку. Подожди немного.");
-                        log.debug("task launching for chat " + chatId);
                         pool.execute(chatsWithWorkingTasks.get(chatId));
-                        log.debug("done with chat " + chatId);
                         break;
                     default:
                         if (command.startsWith("/batch ")) {
@@ -91,7 +89,6 @@ public class Bot extends TelegramLongPollingBot {
                             if (matcher.matches()) {
                                 String[] scalingOptions = matcher.group(1).split(" ");
                                 addTask(chatId, scalingOptions);
-                                log.debug("created batch task for chat " + chatId);
                                 break;
                             }
                         }
@@ -116,8 +113,6 @@ public class Bot extends TelegramLongPollingBot {
                     return;
                 }
 
-                log.debug("received document for processing from chat " + chatId);
-
                 if (!chatsWithWorkingTasks.containsKey(chatId)) {
                     Matcher matcher = scalingPattern.matcher(caption);
                     if (!matcher.matches()) {
@@ -126,12 +121,9 @@ public class Bot extends TelegramLongPollingBot {
                     String[] scalingOptions = caption.split(" ");
                     addTask(chatId, scalingOptions);
                     addImageToTask(chatId, sourceImage);
-                    log.debug("task created and launching for chat " + chatId);
                     pool.execute(chatsWithWorkingTasks.get(chatId));
-                    log.debug("done with chat " + chatId);
                 } else {
                     addImageToTask(chatId, sourceImage);
-                    log.debug("image added for chat " + chatId);
                 }
                 return;
             }
@@ -144,7 +136,6 @@ public class Bot extends TelegramLongPollingBot {
         } catch (IllegalArgumentException e) {
             reply(chatId, "Ошибка в параметрах для масштабирования /help");
         }
-
     }
 
     private void addImageToTask(String chatId, Document sourceImage) throws IOException {
@@ -177,7 +168,7 @@ public class Bot extends TelegramLongPollingBot {
         chatsWithWorkingTasks.put(chatId, new ImageResizerRecursiveAction(scalingOptions, chatId));
     }
 
-    public class ImageResizerRecursiveAction extends RecursiveAction {
+    private class ImageResizerRecursiveAction extends RecursiveAction {
         private final List<Document> documentsToProcess;
 
         @Getter
@@ -208,13 +199,9 @@ public class Bot extends TelegramLongPollingBot {
 
         @Override
         protected void compute() {
-            log.debug("entering fork");
-            log.debug("at the start total images: " + totalImages.get());
             if (documentsToProcess.size() > 1) {
-                log.debug("over threshold -- splitting");
                 invokeAll(createSubTasks());
             } else {
-                log.debug("running task");
                 documentsToProcess.forEach(this::resizeImage);
             }
         }
@@ -222,57 +209,56 @@ public class Bot extends TelegramLongPollingBot {
         private void resizeImage(Document source) {
             try {
                 String fileName = source.getFileName();
-                log.debug("downloading " + fileName);
                 String format = source.getMimeType().split("/")[1];
-                int newWidth = 0, newHeight = 0;
 
                 BufferedImage beforeResize = ImageIO.read(downloadDocument(source));
+                int[] newDimensions = calculateNewDimensions(beforeResize.getWidth(), beforeResize.getHeight(), scalingOptions);
+                int newWidth = newDimensions[0];
+                int newHeight = newDimensions[1];
+                String newFileName = fileName.split("\\.")[0] + "_" + newWidth + "x" + newHeight + "." + fileName.split("\\.")[1];
 
-                if (scalingOptions.length == 2) {
-                    newWidth = Integer.parseInt(scalingOptions[0]);
-                    newHeight = Integer.parseInt(scalingOptions[1]);
-                } else if (scalingOptions.length == 1) {
-                    if (scalingOptions[0].contains("%")) {
-                        int scale = Integer.parseInt(scalingOptions[0].replaceAll("\\D", ""));
-                        newWidth = (int) (beforeResize.getWidth() * (scale / 100.));
-                        newHeight = (int) (beforeResize.getHeight() * (scale / 100.));
-                    } else {
-                        newWidth = Integer.parseInt(scalingOptions[0].replaceAll("\\D", ""));
-                        newHeight = (int) (((double) newWidth / beforeResize.getWidth()) * (double) beforeResize.getHeight());
-                    }
-                }
-
-                log.debug("starting to resize " + fileName);
                 BufferedImage resizedImage = Scalr.resize(beforeResize, Scalr.Method.ULTRA_QUALITY, Scalr.Mode.FIT_EXACT,
                         newWidth, newHeight, Scalr.OP_ANTIALIAS);
-                String newFileName = fileName.split("\\.")[0] + "_" +
-                        newWidth + "x" + newHeight + "." +
-                        fileName.split("\\.")[1];
 
                 ByteArrayOutputStream outputStream = new ByteArrayOutputStream();
                 ImageIO.write(resizedImage, format, outputStream);
                 InputStream inputStream = new ByteArrayInputStream(outputStream.toByteArray());
 
-                log.debug("sending " + fileName + " to chat " + chatId);
                 execute(SendDocument.builder()
                         .chatId(chatId)
                         .caption("Готово!")
                         .document(new InputFile(inputStream, newFileName))
                         .build());
+
                 outputStream.close();
                 inputStream.close();
                 totalImages.decrementAndGet();
-                log.debug("total images remaining: " + totalImages.get());
-                log.debug("resized " + fileName + ", leaving");
                 if(totalImages.get() == 0) {
                     chatsWithWorkingTasks.remove(chatId);
-                    log.debug("removed last image, deleting task from map");
+                    reply(chatId, "Обработка закончена.");
                 }
             } catch (IOException | TelegramApiException e) {
                 log.error(e.getMessage(), e);
                 reply(chatId, "Я немного сломался, попробуй что-нибудь ещё сделать.");
             }
+        }
 
+        private int[] calculateNewDimensions(int currentWidth, int currentHeight, String[] scalingOptions) {
+            int[] newDimensions = new int[2];
+            if (scalingOptions.length == 2) {
+                newDimensions[0] = Integer.parseInt(scalingOptions[0]);
+                newDimensions[1] = Integer.parseInt(scalingOptions[1]);
+            } else if (scalingOptions.length == 1) {
+                if (scalingOptions[0].contains("%")) {
+                    int scale = Integer.parseInt(scalingOptions[0].replaceAll("\\D", ""));
+                    newDimensions[0] = (int) (currentWidth * (scale / 100.));
+                    newDimensions[1] = (int) (currentHeight * (scale / 100.));
+                } else {
+                    newDimensions[0] = Integer.parseInt(scalingOptions[0].replaceAll("\\D", ""));
+                    newDimensions[1] = (int) (((double) newDimensions[0] / currentWidth) * (double) currentHeight);
+                }
+            }
+            return  newDimensions;
         }
 
         private Collection<ImageResizerRecursiveAction> createSubTasks() {
