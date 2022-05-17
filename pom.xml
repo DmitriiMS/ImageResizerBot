@@ -6,7 +6,7 @@
 
     <groupId>org.example</groupId>
     <artifactId>image-resizer-bot</artifactId>
-    <version>1.1</version>
+    <version>1.2</version>
     <packaging>jar</packaging>
 
     <properties>
