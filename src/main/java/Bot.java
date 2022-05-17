@@ -1,5 +1,3 @@
-import lombok.Getter;
-import lombok.Setter;
 import lombok.extern.slf4j.Slf4j;
 import org.imgscalr.Scalr;
 import org.telegram.telegrambots.bots.TelegramLongPollingBot;
@@ -13,7 +11,6 @@ import javax.imageio.ImageIO;
 import java.awt.image.BufferedImage;
 import java.io.*;
 
-import java.io.File;
 import java.nio.charset.StandardCharsets;
 import java.util.*;
 import java.util.concurrent.*;
@@ -21,7 +18,6 @@ import java.util.concurrent.atomic.AtomicInteger;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
-//TODO: scaling optimization (memory usage, speed secondary), new tests, cleanup and refactoring
 @Slf4j
 public class Bot extends TelegramLongPollingBot {
 
@@ -120,10 +116,10 @@ public class Bot extends TelegramLongPollingBot {
                     }
                     String[] scalingOptions = caption.split(" ");
                     addTask(chatId, scalingOptions);
-                    addImageToTask(chatId, sourceImage);
+                    chatsWithWorkingTasks.get(chatId).addDocument(sourceImage);
                     pool.execute(chatsWithWorkingTasks.get(chatId));
                 } else {
-                    addImageToTask(chatId, sourceImage);
+                    chatsWithWorkingTasks.get(chatId).addDocument(sourceImage);
                 }
                 return;
             }
@@ -138,15 +134,11 @@ public class Bot extends TelegramLongPollingBot {
         }
     }
 
-    private void addImageToTask(String chatId, Document sourceImage) throws IOException {
-        ImageResizerRecursiveAction task = chatsWithWorkingTasks.get(chatId);
-        task.addDocument(sourceImage);
-    }
 
-    private File downloadDocument(Document doc) throws TelegramApiException {
+    private InputStream downloadDocument(Document doc) throws TelegramApiException {
         GetFile request = GetFile.builder().fileId(doc.getFileId()).build();
         String path = execute(request).getFilePath();
-        return downloadFile(path);
+        return downloadFileAsStream(path);
     }
 
     private void reply(String chatId, String text) {
@@ -158,7 +150,6 @@ public class Bot extends TelegramLongPollingBot {
         } catch (TelegramApiException e) {
             log.error(e.getMessage(), e);
         }
-
     }
 
     private void addTask(String chatId, String[] scalingOptions) throws IllegalArgumentException, IOException {
@@ -170,15 +161,9 @@ public class Bot extends TelegramLongPollingBot {
 
     private class ImageResizerRecursiveAction extends RecursiveAction {
         private final List<Document> documentsToProcess;
-
-        @Getter
         private final AtomicInteger totalImages;
-        @Getter
-        @Setter
-        private String[] scalingOptions;
-        @Getter
-        @Setter
-        private String chatId;
+        private final String[] scalingOptions;
+        private final String chatId;
 
         public ImageResizerRecursiveAction(List<Document> documentsToProcess, String[] scalingOptions, String chatId, AtomicInteger totalImages) {
             this.documentsToProcess = documentsToProcess;
@@ -196,22 +181,23 @@ public class Bot extends TelegramLongPollingBot {
             totalImages.incrementAndGet();
         }
 
-
         @Override
         protected void compute() {
             if (documentsToProcess.size() > 1) {
                 invokeAll(createSubTasks());
             } else {
-                documentsToProcess.forEach(this::resizeImage);
+                processImageAndSendResult(documentsToProcess.get(0));
             }
         }
 
-        private void resizeImage(Document source) {
+        private void processImageAndSendResult(Document source) {
             try {
                 String fileName = source.getFileName();
                 String format = source.getMimeType().split("/")[1];
 
-                BufferedImage beforeResize = ImageIO.read(downloadDocument(source));
+                InputStream streamedDocument = downloadDocument(source);
+                BufferedImage beforeResize = ImageIO.read(streamedDocument);
+                streamedDocument.close();
                 int[] newDimensions = calculateNewDimensions(beforeResize.getWidth(), beforeResize.getHeight(), scalingOptions);
                 int newWidth = newDimensions[0];
                 int newHeight = newDimensions[1];
@@ -220,20 +206,19 @@ public class Bot extends TelegramLongPollingBot {
                 BufferedImage resizedImage = Scalr.resize(beforeResize, Scalr.Method.ULTRA_QUALITY, Scalr.Mode.FIT_EXACT,
                         newWidth, newHeight, Scalr.OP_ANTIALIAS);
 
-                ByteArrayOutputStream outputStream = new ByteArrayOutputStream();
-                ImageIO.write(resizedImage, format, outputStream);
-                InputStream inputStream = new ByteArrayInputStream(outputStream.toByteArray());
+                ByteArrayOutputStream bufferStream = new ByteArrayOutputStream();
+                ImageIO.write(resizedImage, format, bufferStream);
+                InputStream outgoingStream = new ByteArrayInputStream(bufferStream.toByteArray());
 
                 execute(SendDocument.builder()
                         .chatId(chatId)
                         .caption("Готово!")
-                        .document(new InputFile(inputStream, newFileName))
+                        .document(new InputFile(outgoingStream, newFileName))
                         .build());
 
-                outputStream.close();
-                inputStream.close();
-                totalImages.decrementAndGet();
-                if(totalImages.get() == 0) {
+                bufferStream.close();
+                outgoingStream.close();
+                if(totalImages.decrementAndGet() == 0) {
                     chatsWithWorkingTasks.remove(chatId);
                     reply(chatId, "Обработка закончена.");
                 }
