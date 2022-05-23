@@ -16,6 +16,7 @@ import java.util.Collection;
 import java.util.List;
 import java.util.concurrent.RecursiveAction;
 import java.util.concurrent.atomic.AtomicInteger;
+import java.util.stream.Collectors;
 
 @Slf4j
 public class ImageResizerRecursiveAction extends RecursiveAction {
@@ -59,26 +60,18 @@ public class ImageResizerRecursiveAction extends RecursiveAction {
             InputStream streamedDocument = runningBot.downloadDocument(source);
             BufferedImage beforeResize = ImageIO.read(streamedDocument);
             streamedDocument.close();
-            int[] newDimensions = calculateNewDimensions(beforeResize.getWidth(), beforeResize.getHeight(), scalingOptions);
-            int newWidth = newDimensions[0];
-            int newHeight = newDimensions[1];
-            String newFileName = fileName.split("\\.")[0] + "_" + newWidth + "x" + newHeight + "." + fileName.split("\\.")[1];
+            int[] newWidthAndHeight = calculateNewDimensions(beforeResize.getWidth(), beforeResize.getHeight(), scalingOptions);
+            String newFileName = fileName.split("\\.")[0] + "_" + newWidthAndHeight[0] + "x" + newWidthAndHeight[1] +
+                    "." + fileName.split("\\.")[1];
 
-            BufferedImage resizedImage = Scalr.resize(beforeResize, Scalr.Method.ULTRA_QUALITY, Scalr.Mode.FIT_EXACT,
-                    newWidth, newHeight, Scalr.OP_ANTIALIAS);
-
-            ByteArrayOutputStream bufferStream = new ByteArrayOutputStream();
-            ImageIO.write(resizedImage, format, bufferStream);
-            InputStream outgoingStream = new ByteArrayInputStream(bufferStream.toByteArray());
-
+            InputStream outgoingStream = resizeImage(beforeResize, newWidthAndHeight, format);
             runningBot.execute(SendDocument.builder()
                     .chatId(chatId)
                     .caption("Готово!")
                     .document(new InputFile(outgoingStream, newFileName))
                     .build());
-
-            bufferStream.close();
             outgoingStream.close();
+
             if (totalImages.decrementAndGet() == 0) {
                 runningBot.getChatsWithWorkingTasks().remove(chatId);
                 runningBot.reply(chatId, "Обработка закончена.");
@@ -90,29 +83,37 @@ public class ImageResizerRecursiveAction extends RecursiveAction {
     }
 
     private int[] calculateNewDimensions(int currentWidth, int currentHeight, String[] scalingOptions) {
-        int[] newDimensions = new int[2];
+        int[] newWidthAndHeight = new int[2];
         if (scalingOptions.length == 2) {
-            newDimensions[0] = Integer.parseInt(scalingOptions[0]);
-            newDimensions[1] = Integer.parseInt(scalingOptions[1]);
+            newWidthAndHeight[0] = Integer.parseInt(scalingOptions[0]);
+            newWidthAndHeight[1] = Integer.parseInt(scalingOptions[1]);
         } else if (scalingOptions.length == 1) {
             if (scalingOptions[0].contains("%")) {
                 int scale = Integer.parseInt(scalingOptions[0].replaceAll("\\D", ""));
-                newDimensions[0] = (int) (currentWidth * (scale / 100.));
-                newDimensions[1] = (int) (currentHeight * (scale / 100.));
+                newWidthAndHeight[0] = (int) (currentWidth * (scale / 100.));
+                newWidthAndHeight[1] = (int) (currentHeight * (scale / 100.));
             } else {
-                newDimensions[0] = Integer.parseInt(scalingOptions[0].replaceAll("\\D", ""));
-                newDimensions[1] = (int) (((double) newDimensions[0] / currentWidth) * (double) currentHeight);
+                newWidthAndHeight[0] = Integer.parseInt(scalingOptions[0].replaceAll("\\D", ""));
+                newWidthAndHeight[1] = (int) (((double) newWidthAndHeight[0] / currentWidth) * (double) currentHeight);
             }
         }
-        return newDimensions;
+        return newWidthAndHeight;
+    }
+
+    InputStream resizeImage(BufferedImage beforeResize, int[] newWidthAndHeight, String format) throws IOException {
+        BufferedImage resizedImage = Scalr.resize(beforeResize, Scalr.Method.ULTRA_QUALITY, Scalr.Mode.FIT_EXACT,
+                newWidthAndHeight[0], newWidthAndHeight[1], Scalr.OP_ANTIALIAS);
+        ByteArrayOutputStream bufferStream = new ByteArrayOutputStream();
+        ImageIO.write(resizedImage, format, bufferStream);
+        bufferStream.close();
+        return new ByteArrayInputStream(bufferStream.toByteArray());
     }
 
     private Collection<ImageResizerRecursiveAction> createSubTasks() {
-        List<ImageResizerRecursiveAction> splitTasks = new ArrayList<>();
-        documentsToProcess.forEach(document -> splitTasks.add(new ImageResizerRecursiveAction(runningBot, new ArrayList<>() {{
-            add(document);
-        }}, scalingOptions, chatId, totalImages)));
-        return splitTasks;
+        return documentsToProcess.stream()
+                .map(document ->
+                        new ImageResizerRecursiveAction(runningBot, new ArrayList<>() {{ add(document); }},
+                                scalingOptions, chatId, totalImages))
+                .collect(Collectors.toList());
     }
 }
-
